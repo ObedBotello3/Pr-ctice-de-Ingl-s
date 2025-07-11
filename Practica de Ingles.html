@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>¡Practica tu Inglés para la UAMI!</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+            color: #334155; /* Darker text */
+        }
+        .container {
+            max-width: 960px;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 1rem; /* Rounded corners */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .btn-primary {
+            background-color: #3b82f6; /* Blue */
+            color: #ffffff;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .btn-primary:hover {
+            background-color: #2563eb; /* Darker blue on hover */
+        }
+        .feedback-correct {
+            color: #10b981; /* Green */
+        }
+        .feedback-incorrect {
+            color: #ef4444; /* Red */
+        }
+        input[type="text"], select {
+            border: 1px solid #cbd5e1; /* Light gray border */
+            border-radius: 0.5rem;
+            padding: 0.5rem 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        textarea {
+            border: 1px solid #cbd5e1;
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+            width: 100%;
+            min-height: 120px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div class="container mx-auto mt-8 p-6 card">
+        <h1 class="text-4xl font-bold text-center mb-6 text-indigo-700">¡Practica tu Inglés para la UAMI Iztapalapa!</h1>
+        <p class="text-center text-lg mb-8 text-gray-600">¡Con práctica constante, alcanzarás el nivel más alto! ¡Tú puedes!</p>
+
+        <!-- Vocabulary Section -->
+        <div id="vocabulary-section" class="mb-10 p-6 card">
+            <h2 class="text-3xl font-semibold mb-4 text-purple-700">1. Vocabulario</h2>
+            <p class="mb-4 text-gray-700">Arrastra la palabra correcta al espacio en blanco o selecciona la opción adecuada.</p>
+            <div id="vocabulary-questions">
+                <!-- Questions will be loaded here by JavaScript -->
+            </div>
+            <button onclick="checkVocabulary()" class="btn-primary mt-6">Verificar Vocabulario</button>
+            <div id="vocabulary-feedback" class="mt-4 text-lg font-medium"></div>
+        </div>
+
+        <!-- Grammar Section -->
+        <div id="grammar-section" class="mb-10 p-6 card">
+            <h2 class="text-3xl font-semibold mb-4 text-green-700">2. Gramática</h2>
+            <p class="mb-4 text-gray-700">Completa las oraciones o corrige los errores.</p>
+            <div id="grammar-questions">
+                <!-- Questions will be loaded here by JavaScript -->
+            </div>
+            <button onclick="checkGrammar()" class="btn-primary mt-6">Verificar Gramática</button>
+            <div id="grammar-feedback" class="mt-4 text-lg font-medium"></div>
+        </div>
+
+        <!-- Reading Comprehension Section -->
+        <div id="reading-section" class="mb-10 p-6 card">
+            <h2 class="text-3xl font-semibold mb-4 text-red-700">3. Comprensión Lectora</h2>
+            <p class="mb-4 text-gray-700">Lee el siguiente pasaje y responde las preguntas.</p>
+            <div id="reading-passage" class="bg-gray-100 p-4 rounded-lg mb-6 text-gray-800 leading-relaxed">
+                <!-- Passage will be loaded here by JavaScript -->
+            </div>
+            <div id="reading-questions">
+                <!-- Questions will be loaded here by JavaScript -->
+            </div>
+            <button onclick="checkReading()" class="btn-primary mt-6">Verificar Comprensión Lectora</button>
+            <div id="reading-feedback" class="mt-4 text-lg font-medium"></div>
+        </div>
+    </div>
+
+    <script>
+        // Function to call the Gemini API
+        async function callGeminiAPI(prompt, schema = null) {
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+            const payload = { contents: chatHistory };
+            if (schema) {
+                payload.generationConfig = {
+                    responseMimeType: "application/json",
+                    responseSchema: schema
+                };
+            }
+
+            const apiKey = ""; // Leave this as-is; Canvas will provide the key
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    return schema ? JSON.parse(text) : text;
+                } else {
+                    console.error("Unexpected API response structure:", result);
+                    return null;
+                }
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                return null;
+            }
+        }
+
+        // Vocabulary Questions
+        let vocabularyQuestions = [];
+
+        async function loadVocabularyQuestions() {
+            const schema = {
+                type: "ARRAY",
+                items: {
+                    type: "OBJECT",
+                    properties: {
+                        question: { type: "STRING" },
+                        type: { type: "STRING", enum: ["fill-in-the-blank", "multiple-choice"] },
+                        options: { type: "ARRAY", items: { type: "STRING" } },
+                        correctAnswer: { type: "STRING" }
+                    },
+                    required: ["question", "type", "correctAnswer"]
+                }
+            };
+            // Increased the number of questions requested to 10
+            const prompt = `Generate 10 English vocabulary practice questions for a placement exam. Include a mix of fill-in-the-blank and multiple-choice questions. For fill-in-the-blank, the question should clearly indicate where the word goes (e.g., "The old house was _______ (haunted/abandoned/renovated)."). For multiple-choice, provide 4 options. Ensure the vocabulary is suitable for intermediate to advanced learners. Provide the correct answer for each.`;
+            vocabularyQuestions = await callGeminiAPI(prompt, schema);
+            if (vocabularyQuestions) {
+                renderVocabularyQuestions();
+            } else {
+                // Fallback questions if API call fails (increased to 10)
+                vocabularyQuestions = [
+                    {
+                        question: "The company decided to _______ its operations to a new country.",
+                        type: "fill-in-the-blank",
+                        options: ["expand", "contract", "reduce", "shrink"],
+                        correctAnswer: "expand"
+                    },
+                    {
+                        question: "She showed great _______ when facing the difficult challenge.",
+                        type: "fill-in-the-blank",
+                        options: ["courage", "fear", "weakness", "hesitation"],
+                        correctAnswer: "courage"
+                    },
+                    {
+                        question: "Which word means 'to make something less severe'?",
+                        type: "multiple-choice",
+                        options: ["aggravate", "alleviate", "intensify", "exacerbate"],
+                        correctAnswer: "alleviate"
+                    },
+                    {
+                        question: "The _______ of the new policy caused a lot of debate.",
+                        type: "fill-in-the-blank",
+                        options: ["implementation", "rejection", "delay", "postponement"],
+                        correctAnswer: "implementation"
+                    },
+                    {
+                        question: "He is known for his _______ personality, always making friends easily.",
+                        type: "fill-in-the-blank",
+                        options: ["gregarious", "reserved", "shy", "introverted"],
+                        correctAnswer: "gregarious"
+                    },
+                    {
+                        question: "The ancient ruins were _______ by archaeologists.",
+                        type: "fill-in-the-blank",
+                        options: ["excavated", "buried", "destroyed", "ignored"],
+                        correctAnswer: "excavated"
+                    },
+                    {
+                        question: "To _______ a problem means to make it worse.",
+                        type: "multiple-choice",
+                        options: ["mitigate", "exacerbate", "resolve", "ameliorate"],
+                        correctAnswer: "exacerbate"
+                    },
+                    {
+                        question: "Her _______ for learning new languages is impressive.",
+                        type: "fill-in-the-blank",
+                        options: ["aptitude", "disinterest", "aversion", "reluctance"],
+                        correctAnswer: "aptitude"
+                    },
+                    {
+                        question: "The government decided to _______ a new tax on luxury goods.",
+                        type: "fill-in-the-blank",
+                        options: ["impose", "remove", "waive", "cancel"],
+                        correctAnswer: "impose"
+                    },
+                    {
+                        question: "Which word is a synonym for 'ubiquitous'?",
+                        type: "multiple-choice",
+                        options: ["rare", "scarce", "common", "unique"],
+                        correctAnswer: "common"
+                    }
+                ];
+                renderVocabularyQuestions();
+            }
+        }
+
+        function renderVocabularyQuestions() {
+            const container = document.getElementById('vocabulary-questions');
+            container.innerHTML = '';
+            vocabularyQuestions.forEach((q, index) => {
+                const questionDiv = document.createElement('div');
+                questionDiv.classList.add('mb-4', 'p-3', 'bg-gray-50', 'rounded-md');
+                let inputElement;
+
+                if (q.type === 'fill-in-the-blank') {
+                    // Replace the blank placeholder with an input field
+                    const questionText = q.question.replace('_______', `<input type="text" id="vocab-${index}" class="inline-block w-40 p-1 border rounded-md text-gray-800">`);
+                    questionDiv.innerHTML = `<p class="mb-2 text-gray-800">${index + 1}. ${questionText}</p>`;
+                } else if (q.type === 'multiple-choice') {
+                    questionDiv.innerHTML = `<p class="mb-2 text-gray-800">${index + 1}. ${q.question}</p>`;
+                    inputElement = document.createElement('select');
+                    inputElement.id = `vocab-${index}`;
+                    inputElement.classList.add('block', 'mt-2');
+                    const defaultOption = document.createElement('option');
+                    defaultOption.value = "";
+                    defaultOption.textContent = "Selecciona una opción";
+                    inputElement.appendChild(defaultOption);
+                    q.options.forEach(option => {
+                        const opt = document.createElement('option');
+                        opt.value = option;
+                        opt.textContent = option;
+                        inputElement.appendChild(opt);
+                    });
+                    questionDiv.appendChild(inputElement);
+                }
+                container.appendChild(questionDiv);
+            });
+        }
+
+        function checkVocabulary() {
+            let correctCount = 0;
+            const feedbackDiv = document.getElementById('vocabulary-feedback');
+            feedbackDiv.innerHTML = '';
+
+            vocabularyQuestions.forEach((q, index) => {
+                let userAnswer;
+                if (q.type === 'fill-in-the-blank') {
+                    userAnswer = document.getElementById(`vocab-${index}`).value.trim();
+                } else if (q.type === 'multiple-choice') {
+                    userAnswer = document.getElementById(`vocab-${index}`).value;
+                }
+
+                const resultText = document.createElement('p');
+                if (userAnswer.toLowerCase() === q.correctAnswer.toLowerCase()) {
+                    resultText.classList.add('feedback-correct');
+                    resultText.textContent = `Pregunta ${index + 1}: ¡Correcto!`;
+                    correctCount++;
+                } else {
+                    resultText.classList.add('feedback-incorrect');
+                    resultText.textContent = `Pregunta ${index + 1}: Incorrecto. La respuesta correcta era "${q.correctAnswer}".`;
+                }
+                feedbackDiv.appendChild(resultText);
+            });
+            feedbackDiv.innerHTML += `<p class="mt-4 text-xl font-bold">Puntuación: ${correctCount} de ${vocabularyQuestions.length}</p>`;
+        }
+
+        // Grammar Questions
+        let grammarQuestions = [];
+
+        async function loadGrammarQuestions() {
+            const schema = {
+                type: "ARRAY",
+                items: {
+                    type: "OBJECT",
+                    properties: {
+                        question: { type: "STRING" },
+                        type: { type: "STRING", enum: ["fill-in-the-blank", "sentence-correction"] },
+                        options: { type: "ARRAY", items: { type: "STRING" } }, // For fill-in-the-blank with options
+                        correctAnswer: { type: "STRING" }
+                    },
+                    required: ["question", "type", "correctAnswer"]
+                }
+            };
+            // Increased the number of questions requested to 10
+            const prompt = `Generate 10 English grammar practice questions for a placement exam. Include a mix of fill-in-the-blank (with options if applicable) and sentence correction questions. For sentence correction, provide the incorrect sentence and the correct version. Ensure the grammar points are suitable for intermediate to advanced learners (e.g., verb tenses, conditionals, passive voice, reported speech, prepositions). Provide the correct answer for each.`;
+            grammarQuestions = await callGeminiAPI(prompt, schema);
+            if (grammarQuestions) {
+                renderGrammarQuestions();
+            } else {
+                // Fallback questions (increased to 10)
+                grammarQuestions = [
+                    {
+                        question: "If I had known, I _______ (would have helped/would help/will help) you.",
+                        type: "fill-in-the-blank",
+                        options: ["would have helped", "would help", "will help"],
+                        correctAnswer: "would have helped"
+                    },
+                    {
+                        question: "She said that she _______ (had been studying/has been studying/is studying) all night.",
+                        type: "fill-in-the-blank",
+                        options: ["had been studying", "has been studying", "is studying"],
+                        correctAnswer: "had been studying"
+                    },
+                    {
+                        question: "Correct the sentence: 'Despite of the rain, we went for a walk.'",
+                        type: "sentence-correction",
+                        correctAnswer: "Despite the rain, we went for a walk."
+                    },
+                    {
+                        question: "The book _______ (was written/wrote/has written) by a famous author.",
+                        type: "fill-in-the-blank",
+                        options: ["was written", "wrote", "has written"],
+                        correctAnswer: "was written"
+                    },
+                    {
+                        question: "Correct the sentence: 'He is good in playing chess.'",
+                        type: "sentence-correction",
+                        correctAnswer: "He is good at playing chess."
+                    },
+                    {
+                        question: "By the time we arrived, the movie _______ (had already started/already started/was already starting).",
+                        type: "fill-in-the-blank",
+                        options: ["had already started", "already started", "was already starting"],
+                        correctAnswer: "had already started"
+                    },
+                    {
+                        question: "If she _______ (were/was/is) taller, she could reach the top shelf.",
+                        type: "fill-in-the-blank",
+                        options: ["were", "was", "is"],
+                        correctAnswer: "were"
+                    },
+                    {
+                        question: "Correct the sentence: 'I look forward to hear from you soon.'",
+                        type: "sentence-correction",
+                        correctAnswer: "I look forward to hearing from you soon."
+                    },
+                    {
+                        question: "The new bridge _______ (is being built/is building/has built) next year.",
+                        type: "fill-in-the-blank",
+                        options: ["is being built", "is building", "has built"],
+                        correctAnswer: "is being built"
+                    },
+                    {
+                        question: "Correct the sentence: 'He asked me where did I go.'",
+                        type: "sentence-correction",
+                        correctAnswer: "He asked me where I went."
+                    }
+                ];
+                renderGrammarQuestions();
+            }
+        }
+
+        function renderGrammarQuestions() {
+            const container = document.getElementById('grammar-questions');
+            container.innerHTML = '';
+            grammarQuestions.forEach((q, index) => {
+                const questionDiv = document.createElement('div');
+                questionDiv.classList.add('mb-4', 'p-3', 'bg-gray-50', 'rounded-md');
+                let inputElement;
+
+                if (q.type === 'fill-in-the-blank') {
+                    const match = q.question.match(/\((.*?)\)/); // Find text in parentheses
+                    if (match && match[1]) {
+                        const options = match[1].split('/').map(opt => opt.trim());
+                        const questionText = q.question.replace(match[0], `<select id="grammar-${index}" class="inline-block w-40 p-1 border rounded-md text-gray-800"></select>`);
+                        questionDiv.innerHTML = `<p class="mb-2 text-gray-800">${index + 1}. ${questionText}</p>`;
+                        inputElement = questionDiv.querySelector(`#grammar-${index}`);
+                        const defaultOption = document.createElement('option');
+                        defaultOption.value = "";
+                        defaultOption.textContent = "Selecciona una opción";
+                        inputElement.appendChild(defaultOption);
+                        options.forEach(option => {
+                            const opt = document.createElement('option');
+                            opt.value = option;
+                            opt.textContent = option;
+                            inputElement.appendChild(opt);
+                        });
+                    } else {
+                        // Fallback if no options in parentheses (simple fill-in-the-blank)
+                        questionDiv.innerHTML = `<p class="mb-2 text-gray-800">${index + 1}. ${q.question.replace('_______', `<input type="text" id="grammar-${index}" class="inline-block w-40 p-1 border rounded-md text-gray-800">`)}</p>`;
+                    }
+                } else if (q.type === 'sentence-correction') {
+                    questionDiv.innerHTML = `<p class="mb-2 text-gray-800">${index + 1}. ${q.question}</p>`;
+                    inputElement = document.createElement('input');
+                    inputElement.type = 'text';
+                    inputElement.id = `grammar-${index}`;
+                    inputElement.classList.add('block', 'mt-2');
+                    inputElement.placeholder = 'Escribe la oración corregida aquí';
+                    questionDiv.appendChild(inputElement);
+                }
+                container.appendChild(questionDiv);
+            });
+        }
+
+        function checkGrammar() {
+            let correctCount = 0;
+            const feedbackDiv = document.getElementById('grammar-feedback');
+            feedbackDiv.innerHTML = '';
+
+            grammarQuestions.forEach((q, index) => {
+                let userAnswer;
+                const inputElement = document.getElementById(`grammar-${index}`);
+                if (inputElement.tagName === 'SELECT' || inputElement.type === 'text') {
+                    userAnswer = inputElement.value.trim();
+                }
+
+                const resultText = document.createElement('p');
+                if (userAnswer.toLowerCase() === q.correctAnswer.toLowerCase()) {
+                    resultText.classList.add('feedback-correct');
+                    resultText.textContent = `Pregunta ${index + 1}: ¡Correcto!`;
+                    correctCount++;
+                } else {
+                    resultText.classList.add('feedback-incorrect');
+                    resultText.textContent = `Pregunta ${index + 1}: Incorrecto. La respuesta correcta era "${q.correctAnswer}".`;
+                }
+                feedbackDiv.appendChild(resultText);
+            });
+            feedbackDiv.innerHTML += `<p class="mt-4 text-xl font-bold">Puntuación: ${correctCount} de ${grammarQuestions.length}</p>`;
+        }
+
+        // Reading Comprehension Questions
+        let readingPassage = "";
+        let readingQuestions = [];
+
+        async function loadReadingContent() {
+            const passageSchema = {
+                type: "OBJECT",
+                properties: {
+                    title: { type: "STRING" },
+                    text: { type: "STRING" }
+                },
+                required: ["title", "text"]
+            };
+            const passagePrompt = `Generate a short English reading comprehension passage (around 200-250 words) suitable for intermediate to advanced learners. The topic should be general knowledge or a simple narrative.`;
+            const generatedPassage = await callGeminiAPI(passagePrompt, passageSchema);
+
+            if (generatedPassage) {
+                readingPassage = `<strong>${generatedPassage.title}</strong><br><br>${generatedPassage.text}`;
+            } else {
+                // Fallback passage
+                readingPassage = `
+                    <strong>The Importance of Renewable Energy</strong><br><br>
+                    Renewable energy sources are becoming increasingly important as the world seeks to reduce its reliance on fossil fuels and combat climate change. Solar, wind, hydro, and geothermal power are all examples of renewable energy that can be replenished naturally. Unlike coal, oil, and natural gas, which are finite resources and produce harmful greenhouse gases when burned, renewable energy sources offer a sustainable alternative. Many countries are investing heavily in renewable energy infrastructure, aiming to transition to a cleaner, more sustainable future. While there are challenges, such as the intermittency of some sources and the initial cost of installation, the long-term benefits for the environment and human health are undeniable. The shift towards renewables also creates new job opportunities and can lead to greater energy independence for nations. However, integrating these diverse sources into existing power grids requires significant technological advancements and policy support. Education and public awareness are also crucial to accelerate the adoption of renewable energy and ensure a sustainable future for generations to come.
+                `;
+            }
+            document.getElementById('reading-passage').innerHTML = readingPassage;
+
+            const questionsSchema = {
+                type: "ARRAY",
+                items: {
+                    type: "OBJECT",
+                    properties: {
+                        question: { type: "STRING" },
+                        options: { type: "ARRAY", items: { type: "STRING" } },
+                        correctAnswer: { type: "STRING" }
+                    },
+                    required: ["question", "options", "correctAnswer"]
+                }
+            };
+            // Increased the number of questions requested to 5
+            const questionsPrompt = `Based on the following passage, generate 5 multiple-choice reading comprehension questions with 4 options each. Ensure the questions test understanding of main ideas, details, and inferences. Provide the correct answer for each.
+            Passage: ${generatedPassage ? generatedPassage.text : readingPassage}`; // Use generated passage or fallback
+            readingQuestions = await callGeminiAPI(questionsPrompt, questionsSchema);
+
+            if (readingQuestions) {
+                renderReadingQuestions();
+            } else {
+                // Fallback questions (increased to 5)
+                readingQuestions = [
+                    {
+                        question: "What is the main reason for the increasing importance of renewable energy sources?",
+                        options: ["They are cheaper to install.", "They help reduce reliance on fossil fuels and combat climate change.", "They are only available in certain countries.", "They are a new discovery."],
+                        correctAnswer: "They help reduce reliance on fossil fuels and combat climate change."
+                    },
+                    {
+                        question: "Which of the following is NOT an example of a renewable energy source mentioned in the passage?",
+                        options: ["Solar power", "Wind power", "Natural gas", "Geothermal power"],
+                        correctAnswer: "Natural gas"
+                    },
+                    {
+                        question: "What is one challenge associated with renewable energy sources?",
+                        options: ["They produce harmful greenhouse gases.", "They are finite resources.", "The intermittency of some sources.", "They are difficult to transport."],
+                        correctAnswer: "The intermittency of some sources."
+                    },
+                    {
+                        question: "According to the passage, what can the shift towards renewables lead to?",
+                        options: ["Increased fossil fuel consumption.", "Greater energy dependence.", "New job opportunities and energy independence.", "Higher energy costs."],
+                        correctAnswer: "New job opportunities and energy independence."
+                    },
+                    {
+                        question: "What is crucial to accelerate the adoption of renewable energy?",
+                        options: ["Reducing the number of renewable sources.", "Limiting technological advancements.", "Education and public awareness.", "Increasing reliance on traditional energy."],
+                        correctAnswer: "Education and public awareness."
+                    }
+                ];
+                renderReadingQuestions();
+            }
+        }
+
+        function renderReadingQuestions() {
+            const container = document.getElementById('reading-questions');
+            container.innerHTML = '';
+            readingQuestions.forEach((q, index) => {
+                const questionDiv = document.createElement('div');
+                questionDiv.classList.add('mb-4', 'p-3', 'bg-gray-50', 'rounded-md');
+                questionDiv.innerHTML = `<p class="mb-2 text-gray-800">${index + 1}. ${q.question}</p>`;
+
+                q.options.forEach((option, optIndex) => {
+                    const radioDiv = document.createElement('div');
+                    radioDiv.classList.add('mb-1');
+                    const radioInput = document.createElement('input');
+                    radioInput.type = 'radio';
+                    radioInput.id = `reading-${index}-option-${optIndex}`;
+                    radioInput.name = `reading-q-${index}`;
+                    radioInput.value = option;
+                    radioInput.classList.add('mr-2');
+
+                    const radioLabel = document.createElement('label');
+                    radioLabel.htmlFor = `reading-${index}-option-${optIndex}`;
+                    radioLabel.textContent = option;
+                    radioLabel.classList.add('text-gray-700');
+
+                    radioDiv.appendChild(radioInput);
+                    radioDiv.appendChild(radioLabel);
+                    questionDiv.appendChild(radioDiv);
+                });
+                container.appendChild(questionDiv);
+            });
+        }
+
+        function checkReading() {
+            let correctCount = 0;
+            const feedbackDiv = document.getElementById('reading-feedback');
+            feedbackDiv.innerHTML = '';
+
+            readingQuestions.forEach((q, index) => {
+                const selectedOption = document.querySelector(`input[name="reading-q-${index}"]:checked`);
+                const userAnswer = selectedOption ? selectedOption.value : '';
+
+                const resultText = document.createElement('p');
+                if (userAnswer.toLowerCase() === q.correctAnswer.toLowerCase()) {
+                    resultText.classList.add('feedback-correct');
+                    resultText.textContent = `Pregunta ${index + 1}: ¡Correcto!`;
+                    correctCount++;
+                } else {
+                    resultText.classList.add('feedback-incorrect');
+                    resultText.textContent = `Pregunta ${index + 1}: Incorrecto. La respuesta correcta era "${q.correctAnswer}".`;
+                }
+                feedbackDiv.appendChild(resultText);
+            });
+            feedbackDiv.innerHTML += `<p class="mt-4 text-xl font-bold">Puntuación: ${correctCount} de ${readingQuestions.length}</p>`;
+        }
+
+        // Load all content when the page loads
+        window.onload = () => {
+            loadVocabularyQuestions();
+            loadGrammarQuestions();
+            loadReadingContent();
+        };
+    </script>
+</body>
+</html>
